@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DATA Collector</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <h2>DATA<br><span>Collector</span></h2>
+            </div>
+
+            <div class="nav-items">
+                <button class="nav-item active" onclick="switchView('dashboard')">
+                    <span class="icon">📊</span> Dashboard
+                </button>
+                <div class="nav-separator">DATA VIEWS</div>
+                <button class="nav-item" onclick="switchView('ohlcv')">
+                    <span class="icon">🕯️</span> OHLCV Data
+                </button>
+                <button class="nav-item" onclick="switchView('funding')">
+                    <span class="icon">💸</span> Funding
+                </button>
+                <button class="nav-item" onclick="switchView('oi')">
+                    <span class="icon">📈</span> Open Interest
+                </button>
+                <button class="nav-item" onclick="switchView('logs')">
+                    <span class="icon">📜</span> System Logs
+                </button>
+            </div>
+
+            <div class="sidebar-footer">
+                <button class="nav-item settings-item" onclick="toggleSettings()">
+                    <span class="icon">⚙️</span> Settings
+                </button>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+
+            <!-- Dashboard View -->
+            <div id="view-dashboard" class="view-section active">
+                <header class="top-bar">
+                    <h1>Dashboard <span>Overview</span></h1>
+                    <div id="connection-status" class="status-badge connecting">Connecting...</div>
+                </header>
+
+                <!-- Status Card -->
+                <section class="card status-card">
+                    <h2>System Status</h2>
+                    <div class="status-grid">
+                        <div class="status-item">
+                            <span class="label">Last Execution</span>
+                            <span class="value" id="last-run-time">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Result</span>
+                            <span class="value" id="last-run-status">-</span>
+                        </div>
+                        <div class="status-item wide">
+                            <span class="label">Log Message</span>
+                            <span class="value small" id="last-run-msg">-</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Schedule Card -->
+                <section class="card schedule-card">
+                    <h2>Automation Schedule</h2>
+                    <div class="schedule-grid">
+                        <div class="control-group">
+                            <label>Start Time (Now if empty)</label>
+                            <input type="time" id="schedule-start-time">
+                        </div>
+                        <div class="control-group">
+                            <label>Interval (Minutes)</label>
+                            <input type="number" id="schedule-interval" min="1" value="60">
+                        </div>
+                        <div class="control-group">
+                            <label>Action</label>
+                            <div style="display: flex; gap: 0.5rem;">
+                                <button class="btn-secondary" onclick="saveScheduleSettings()"
+                                    style="flex: 1;">Save</button>
+                                <button id="btn-toggle-schedule" class="btn-primary" onclick="toggleSchedule()"
+                                    style="flex: 2;">Enable Schedule</button>
+                            </div>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Next Run</span>
+                            <span class="value small" id="schedule-next-run">-</span>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Data Freshness Table -->
+                <section class="card data-card">
+                    <h2>Data Freshness</h2>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Asset</th>
+                                    <th>OHLCV (1h)</th>
+                                    <th>Funding Rate <span
+                                            style="font-size:0.7em; opacity:0.6; font-weight:normal">(Last
+                                            Settled)</span></th>
+                                    <th>Open Interest</th>
+                                </tr>
+                            </thead>
+                            <tbody id="data-table-body">
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Generic Data View (Shared for OHLCV, Funding, OI, Logs) -->
+            <div id="view-data" class="view-section hidden">
+                <header class="top-bar">
+                    <h1 id="data-view-title">Data View</h1>
+                </header>
+
+                <section class="card table-card">
+                    <div class="table-controls">
+                        <div class="control-group horizontal">
+                            <label>Asset:</label>
+                            <select id="view-asset-filter" onchange="refreshDataView()">
+                                <option value="">All Assets</option>
+                                <option value="BTC">BTC</option>
+                                <option value="ETH">ETH</option>
+                                <option value="SOL">SOL</option>
+                            </select>
+                        </div>
+                        <div class="control-group horizontal">
+                            <label>Limit:</label>
+                            <select id="view-limit-filter" onchange="refreshDataView()">
+                                <option value="20">20</option>
+                                <option value="50" selected>50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </div>
+                        <div class="pagination-controls">
+                            <button onclick="changePage(-1)" class="btn-small">Prev</button>
+                            <span id="page-indicator">Page 1</span>
+                            <button onclick="changePage(1)" class="btn-small">Next</button>
+                        </div>
+                    </div>
+
+                    <div class="table-wrapper full-height">
+                        <table class="data-view-table">
+                            <thead id="data-view-head"></thead>
+                            <tbody id="data-view-body"></tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-overlay hidden">
+        <div class="modal-container">
+            <div class="modal-header">
+                <h2>Settings</h2>
+                <button class="btn-close" onclick="toggleSettings()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <h3>Configuration</h3>
+                <div class="setting-item" style="align-items: flex-start;">
+                    <div class="setting-info">
+                        <strong>Target Start Date</strong>
+                        <div class="text-dim small">Fallback start date for updates</div>
+                    </div>
+                    <div class="control-group" style="gap: 0.5rem; align-items: flex-end;">
+                        <input type="date" id="setting-start-date" class="input-dark"
+                            style="width: 120px; font-size: 0.85rem;">
+                        <button class="btn-primary small" style="width: 120px;" onclick="saveSettings()">Save</button>
+                    </div>
+                </div>
+
+                <hr style="border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0;">
+
+                <h3>Analysis</h3>
+                <div class="setting-item">
+                    <div class="setting-info" style="flex: 1;">
+                        <strong>Gap Analysis</strong>
+                        <div class="text-dim small">Check for missing data ranges</div>
+                    </div>
+                    <button class="btn-primary small" style="width: 120px;" onclick="runGapAnalysis()">Run
+                        Check</button>
+                </div>
+                <!-- Results Container (Full Width) -->
+                <div id="gap-results" class="gap-results hidden" style="width: 100%; margin-top: 1rem;">
+                    <!-- Results injected here -->
+                </div>
+
+                <hr style="border: 0; border-top: 1px solid var(--border); margin: 1.5rem 0;">
+
+                <h3>Data Management</h3>
+                <p class="text-dim" style="margin-bottom: 1.5rem;">Manage stored market data. <span
+                        class="text-error">Warning: Irreversible.</span></p>
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <strong>OHLCV Data</strong>
+                        <div class="text-dim small">Candlestick data (1h)</div>
+                    </div>
+                    <button class="btn-danger small" onclick="cleanupData('ohlcv')">Clear</button>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <strong>Funding Rates</strong>
+                        <div class="text-dim small">Historical funding rates</div>
+                    </div>
+                    <button class="btn-danger small" onclick="cleanupData('funding')">Clear</button>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <strong>Open Interest</strong>
+                        <div class="text-dim small">Historical OI data</div>
+                    </div>
+                    <button class="btn-danger small" onclick="cleanupData('oi')">Clear</button>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <strong>System Logs</strong>
+                        <div class="text-dim small">Execution history</div>
+                    </div>
+                    <button class="btn-danger small" onclick="cleanupData('logs')">Clear</button>
+                </div>
+
+
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <strong class="text-error">Purge All Data</strong>
+                        <div class="text-dim small">Reset entire database content</div>
+                    </div>
+                    <button class="btn-danger" onclick="cleanupData('all')">DELETE ALL</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js?v=7"></script>
+</body>
+
+</html>

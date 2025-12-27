@@ -1,0 +1,16 @@
+services:
+  datacollector:
+    build: .
+    image: datacollector:latest
+    container_name: datacollector
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    volumes:
+      # Persist logs if needed (optional)
+      - ./logs:/app/logs
+    # If using host IP for DB, standard bridge is fine.
+    # If needing to communicate with other containers by name, join their network here.
+    network_mode: "bridge"

@@ -1,0 +1,39 @@
+BTCUSDT RAW: {'symbol': 'BTCUSDT', 'size': '28258.053'}
+BTCUSDT EXTRACTED: 28258.053
+ETHUSDT RAW: {'symbol': 'ETHUSDT', 'size': '574575.66'}
+ETHUSDT EXTRACTED: 574575.66
+SOLUSDT RAW: {'symbol': 'SOLUSDT', 'size': '4784326.8'}
+SOLUSDT EXTRACTED: 4784326.8
+BTCUSDT RAW: {'symbol': 'BTCUSDT', 'size': '28258.415'}
+BTCUSDT EXTRACTED: 28258.415
+ETHUSDT RAW: {'symbol': 'ETHUSDT', 'size': '574535.53'}
+ETHUSDT EXTRACTED: 574535.53
+SOLUSDT RAW: {'symbol': 'SOLUSDT', 'size': '4784198'}
+SOLUSDT EXTRACTED: 4784198.0
+BTCUSDT RAW: {'symbol': 'BTCUSDT', 'size': '28265.7138'}
+BTCUSDT EXTRACTED: 28265.7138
+BTCUSDT INSERT PAYLOAD: [('BTC', datetime.datetime(2025, 12, 27, 0, 23, 35, 648000, tzinfo=datetime.timezone.utc), 28265.7138)]
+ETHUSDT RAW: {'symbol': 'ETHUSDT', 'size': '575301.5'}
+ETHUSDT EXTRACTED: 575301.5
+ETHUSDT INSERT PAYLOAD: [('ETH', datetime.datetime(2025, 12, 27, 0, 23, 37, 383000, tzinfo=datetime.timezone.utc), 575301.5)]
+SOLUSDT RAW: {'symbol': 'SOLUSDT', 'size': '4784522.6'}
+SOLUSDT EXTRACTED: 4784522.6
+SOLUSDT INSERT PAYLOAD: [('SOL', datetime.datetime(2025, 12, 27, 0, 23, 39, 84000, tzinfo=datetime.timezone.utc), 4784522.6)]
+BTCUSDT RAW: {'symbol': 'BTCUSDT', 'size': '28265.884'}
+BTCUSDT EXTRACTED: 28265.884
+BTCUSDT INSERT PAYLOAD: [('BTC', datetime.datetime(2025, 12, 27, 0, 24, 7, 172000, tzinfo=datetime.timezone.utc), 28265.884)]
+ETHUSDT RAW: {'symbol': 'ETHUSDT', 'size': '575196.11'}
+ETHUSDT EXTRACTED: 575196.11
+ETHUSDT INSERT PAYLOAD: [('ETH', datetime.datetime(2025, 12, 27, 0, 24, 9, 449000, tzinfo=datetime.timezone.utc), 575196.11)]
+SOLUSDT RAW: {'symbol': 'SOLUSDT', 'size': '4784522.6'}
+SOLUSDT EXTRACTED: 4784522.6
+SOLUSDT INSERT PAYLOAD: [('SOL', datetime.datetime(2025, 12, 27, 0, 24, 12, 104000, tzinfo=datetime.timezone.utc), 4784522.6)]
+BTCUSDT RAW: {'symbol': 'BTCUSDT', 'size': '28258.1569'}
+BTCUSDT EXTRACTED: 28258.1569
+BTCUSDT INSERT PAYLOAD: [('BTC', datetime.datetime(2025, 12, 27, 0, 24, 36, 861000, tzinfo=datetime.timezone.utc), 28258.1569)]
+ETHUSDT RAW: {'symbol': 'ETHUSDT', 'size': '575190.34'}
+ETHUSDT EXTRACTED: 575190.34
+ETHUSDT INSERT PAYLOAD: [('ETH', datetime.datetime(2025, 12, 27, 0, 24, 38, 858000, tzinfo=datetime.timezone.utc), 575190.34)]
+SOLUSDT RAW: {'symbol': 'SOLUSDT', 'size': '4784941.5'}
+SOLUSDT EXTRACTED: 4784941.5
+SOLUSDT INSERT PAYLOAD: [('SOL', datetime.datetime(2025, 12, 27, 0, 24, 40, 625000, tzinfo=datetime.timezone.utc), 4784941.5)]

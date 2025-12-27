@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment variables
+.env
+
+# Logs
+*.log
+logs/
+
+# Data dumps
+data_dump/
+*.json
+
+# VS Code
+.vscode/
+
+# Virtual Environment
+venv/
+env/
