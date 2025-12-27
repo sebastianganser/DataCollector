@@ -586,4 +586,4 @@ if __name__ == "__main__":
     import uvicorn
     # Note: reload=True in dev might cause double scheduler init issues unless careful.
     # lifespan handles it better.
-    uvicorn.run("server:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("server:app", host="0.0.0.0", port=8888, reload=True)

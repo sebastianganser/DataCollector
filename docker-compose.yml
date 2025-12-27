@@ -5,7 +5,7 @@ services:
     container_name: datacollector
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8888:8888"
     env_file:
       - .env
     volumes:

@@ -10,7 +10,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Expose the API port
-EXPOSE 8000
+EXPOSE 8888
 
 # Run the server
 CMD ["python", "server.py"]
