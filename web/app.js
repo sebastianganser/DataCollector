@@ -262,34 +262,69 @@ let viewState = {
     asset: ''
 };
 
+const SCHEDULE_API_URL = '/api/schedule';
+
+let cmEditor = null; // Global CodeMirror instance
+
+async function fetchOutputStats() {
+    try {
+        const response = await fetch(`${API_URL}/output/stats`);
+        const data = await response.json();
+        const el = document.getElementById('output-file-count');
+        if (el) {
+            el.textContent = data.count !== undefined ? data.count : '-';
+        }
+    } catch (e) {
+        console.error("Failed to fetch output stats:", e);
+    }
+}
+
+
+// --- Switching Views ---
 function switchView(viewName) {
     currentView = viewName;
 
     // Update Sidebar
     document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    // Map view to index: dashboard=0, ohlcv=1, funding=2, oi=3, logs=4
-    const indices = { 'dashboard': 0, 'ohlcv': 1, 'funding': 2, 'oi': 3, 'logs': 4 };
+    // Map view to index: dashboard=0, ohlcv=1, funding=2, oi=3, logs=4, upload=5
+    // Note: Assuming Upload is the 6th item (index 5) based on HTML structure
+    // Let's rely on finding by function call or text rather than hardcoded index if possible, 
+    // but the current code uses indices. Let's fix the indices map.
+    const indices = { 'dashboard': 0, 'ohlcv': 1, 'funding': 2, 'oi': 3, 'logs': 4, 'upload': 5 };
     const navItems = document.querySelectorAll('.nav-items .nav-item');
     if (indices[viewName] !== undefined && navItems[indices[viewName]]) {
         navItems[indices[viewName]].classList.add('active');
     }
 
-    // Update Main Content
-    document.getElementById('view-dashboard').classList.add('hidden');
-    document.getElementById('view-dashboard').classList.remove('active');
-    document.getElementById('view-data').classList.add('hidden');
-    document.getElementById('view-data').classList.remove('active');
+    // Hide All Views first
+    const views = ['view-dashboard', 'view-data', 'view-upload'];
+    views.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.classList.add('hidden');
+            el.classList.remove('active');
+        }
+    });
 
+    // Show Selected View
     if (viewName === 'dashboard') {
-        document.getElementById('view-dashboard').classList.remove('hidden');
-        document.getElementById('view-dashboard').classList.add('active');
+        const el = document.getElementById('view-dashboard');
+        el.classList.remove('hidden');
+        el.classList.add('active');
         // Trigger immediate update
         fetchStatus();
         fetchDataFreshness();
         fetchSchedule();
+    } else if (viewName === 'upload') {
+        const el = document.getElementById('view-upload');
+        el.classList.remove('hidden');
+        el.classList.add('active');
+        fetchOutputStats();
     } else {
-        document.getElementById('view-data').classList.remove('hidden');
-        document.getElementById('view-data').classList.add('active');
+        // Generic Data Views (ohlcv, funding, etc.)
+        const el = document.getElementById('view-data');
+        el.classList.remove('hidden');
+        el.classList.add('active');
         document.getElementById('data-view-title').textContent = getViewTitle(viewName);
 
         // Hide Asset filter for Logs
@@ -541,13 +576,479 @@ async function cleanupData(target) {
     }
 }
 
+// --- File Upload Logic ---
+
+let currentCorrectionFile = null;
+
+function initUploadLogic() {
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const statusDiv = document.getElementById('upload-status');
+    const browseBtn = dropZone.querySelector('.browse-btn');
+
+    // Click to Browse
+    if (browseBtn) {
+        browseBtn.addEventListener('click', () => fileInput.click());
+    }
+
+    // Input Change
+    if (fileInput) {
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileUpload(e.target.files[0]);
+            }
+        });
+    }
+
+    if (dropZone) {
+        // Drag Over
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        // Drag Leave
+        dropZone.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+        });
+
+        // Drop
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                handleFileUpload(e.dataTransfer.files[0]);
+            }
+        });
+    }
+
+    window.handleFileUpload = async function (file) {
+        if (file.type !== "application/json" && !file.name.endsWith(".json")) {
+            statusDiv.innerHTML = '<span class="text-error">Invalid file format. Please upload a JSON file.</span>';
+            return;
+        }
+
+        statusDiv.innerHTML = '<span class="text-dim">Uploading and Processing...</span>';
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await fetch(`${API_URL}/upload`, {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await res.json();
+
+            if (res.ok && result.status === 'success') {
+                statusDiv.innerHTML = `<span class="text-success">✅ ${result.message}</span> <button class="btn btn-primary" onclick="processFile('${file.name}')" style="margin-left:10px;">Process</button>`;
+            } else if (result.status === 'validation_error') {
+                // Calculate line numbers for better usability
+                let formattedContent = "";
+                try {
+                    // We need to read the file content to map lines
+                    // Since specific file object is not easily available here without reading input again
+                    // We will fetch the content from server just like openCorrectionModal does
+                    // OR we can read the file from the input if we have access to 'file' variable which is available in parent scope
+
+                    const text = await file.text();
+                    const jsonObj = JSON.parse(text);
+                    formattedContent = JSON.stringify(jsonObj, null, 4);
+                } catch (e) {
+                    // If parse fails, we can't map lines, just use raw
+                    formattedContent = "";
+                }
+
+                let errorHtml = '<span class="text-error">Validation Failed:</span><ul>';
+
+                result.errors.forEach(err => {
+                    let displayErr = err;
+                    if (formattedContent) {
+                        const line = findLineNumberForError(err, formattedContent);
+                        if (line !== -1) {
+                            // Replace "Episode X" with "Line Y" or prepend Line Y
+                            // "Episode 0: Field 'created_at'..." -> "Line 36: Field 'created_at'..."
+                            displayErr = err.replace(/Episode \d+:/, `Line ${line + 1}:`);
+                            if (displayErr === err) {
+                                displayErr = `Line ${line + 1}: ${err}`;
+                            }
+                        }
+                    }
+                    errorHtml += `<li>${displayErr}</li>`;
+                });
+                errorHtml += '</ul>';
+
+                // Add "Fix" button
+                if (result.filename) {
+                    errorHtml += `<button class="btn btn-primary" onclick="openCorrectionModal('${result.filename}')" style="margin-top:1rem;">Fix Issues</button>`;
+                }
+
+                statusDiv.innerHTML = errorHtml;
+
+                // Store errors globally for the editor to use later
+                window.currentValidationErrors = result.errors;
+
+            } else {
+                statusDiv.innerHTML = `<span class="text-error">Error: ${result.message}</span>`;
+            }
+
+        } catch (e) {
+            statusDiv.innerHTML = `<span class="text-error">Upload Error: ${e.message}</span>`;
+            console.error(e);
+        }
+    }
+}
+
+// Helper to find line number (shared logic)
+function findLineNumberForError(err, content) {
+    const lines = content.split('\n');
+    let lineIdx = -1;
+
+    const epMatch = err.match(/Episode (\d+):/);
+    if (epMatch) {
+        const epIndex = parseInt(epMatch[1]);
+        let currentEp = -1;
+        let insideEpisodes = false;
+        let braceDepth = 0;
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (line.includes('"episodes":') && line.includes('[')) {
+                insideEpisodes = true;
+                continue;
+            }
+            if (insideEpisodes) {
+                if (braceDepth === 0 && line.trim().startsWith(']')) {
+                    insideEpisodes = false;
+                    continue;
+                }
+                const openBraces = (line.match(/{/g) || []).length;
+                const closeBraces = (line.match(/}/g) || []).length;
+
+                if (line.includes('{')) {
+                    if (braceDepth === 0) currentEp++;
+                    braceDepth += openBraces;
+                }
+
+                if (currentEp === epIndex && braceDepth >= 1) {
+                    const fieldMatch = err.match(/Field '([^']+)'/);
+                    if (fieldMatch) {
+                        const fieldName = fieldMatch[1];
+                        if (line.includes(`"${fieldName}"`)) {
+                            lineIdx = i;
+                            break;
+                        }
+                    } else if (line.includes('{') && braceDepth === 1) {
+                        if (lineIdx === -1) lineIdx = i;
+                    }
+                }
+                if (line.includes('}')) braceDepth -= closeBraces;
+            }
+        }
+    } else if (err.includes("Top-level field")) {
+        const fieldMatch = err.match(/field '([^']+)'/);
+        if (fieldMatch) {
+            const fieldName = fieldMatch[1];
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].includes(`"${fieldName}"`)) {
+                    lineIdx = i;
+                    break;
+                }
+            }
+        }
+    }
+    return lineIdx;
+}
+
+// --- Correction Logic ---
+
+window.openCorrectionModal = function (filename) {
+    currentCorrectionFile = filename;
+    const modal = document.getElementById('correction-modal');
+    modal.classList.remove('hidden');
+
+    document.getElementById('correction-filename').textContent = `Fix File: ${filename}`;
+
+    // Clear previous errors in modal
+    const errorList = document.getElementById('correction-errors');
+    errorList.innerHTML = '';
+
+    // Fetch content
+    fetch(`${API_URL}/file/${filename}`)
+        .then(res => {
+            if (!res.ok) throw new Error("Failed to load file");
+            return res.json(); // Get wrapper object { filename, content }
+        })
+        .then(data => {
+            // content is in data.content
+            let fileContent = data.content;
+
+            // Try to pretty-print
+            try {
+                const jsonObj = JSON.parse(fileContent);
+                fileContent = JSON.stringify(jsonObj, null, 4);
+            } catch (e) {
+                console.warn("Could not pretty-print JSON", e);
+            }
+
+            // Initialize CodeMirror if not already done
+            if (!cmEditor) {
+                const textarea = document.getElementById('json-editor');
+                cmEditor = CodeMirror.fromTextArea(textarea, {
+                    mode: "application/json",
+                    theme: "dracula",
+                    lineNumbers: true,
+                    gutters: ["CodeMirror-linenumbers", "error-gutter"]
+                });
+            }
+
+            cmEditor.setValue(fileContent);
+
+            // If we have stored errors from the upload attempt, show them
+            if (window.currentValidationErrors) {
+                highlightErrors(window.currentValidationErrors);
+
+                window.currentValidationErrors.forEach(err => {
+                    const el = document.createElement('div');
+                    el.className = 'error-item';
+                    el.textContent = `• ${err}`;
+                    errorList.appendChild(el);
+                });
+            }
+
+            // Refresh editor to display correctly
+            setTimeout(() => cmEditor.refresh(), 50);
+        })
+        .catch(err => {
+            console.error(err);
+            errorList.innerHTML = `<div class="error-item">Error loading file: ${err.message}</div>`;
+        });
+}
+
+function highlightErrors(errors) {
+    if (!cmEditor) return;
+    cmEditor.clearGutter("error-gutter"); // Clear old markers
+
+    // Map errors to lines
+    // Error formats:
+    // "Episode X: Field 'Y' cannot be empty"
+    // "Top-level field 'Y' cannot be empty"
+
+    const content = cmEditor.getValue();
+    const lines = content.split('\n');
+
+    errors.forEach(err => {
+        let lineIdx = -1;
+
+        // 1. Episode Errors
+        const epMatch = err.match(/Episode (\d+):/);
+        if (epMatch) {
+            const epIndex = parseInt(epMatch[1]);
+            // Find the Nth occurrence of "{" inside "episodes" array
+            // This is a naive regex approach but might work for standard formatting.
+            // Better: Parse JSON AST? Too heavy for pure JS frontend without libraries?
+            // Let's try a heuristic: find "episodes": [ then count {
+
+            // Heuristic A: Look for "event_id" if mentioned?
+            // Heuristic B: Just highlight the opening brace of that episode?
+
+            // Let's try to find the start of the episode object.
+            let currentEp = -1;
+            let insideEpisodes = false;
+
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].includes('"episodes":')) {
+                    insideEpisodes = true;
+                    continue;
+                }
+                if (insideEpisodes) {
+                    if (lines[i].includes('{')) {
+                        currentEp++;
+                        if (currentEp === epIndex) {
+                            lineIdx = i;
+                            // Try to refine: if error mentions a field, find that field inside this object block
+                            const fieldMatch = err.match(/Field '([^']+)'/);
+                            if (fieldMatch) {
+                                const fieldName = fieldMatch[1];
+                                // Search forward for this field until next '}' or '{'
+                                for (let j = i; j < lines.length; j++) {
+                                    if (lines[j].includes('}')) break; // End of object
+                                    if (lines[j].includes(`"${fieldName}"`)) {
+                                        lineIdx = j;
+                                        break;
+                                    }
+                                }
+                            }
+                            break;
+                        }
+                    }
+                    if (lines[i].includes(']')) {
+                        insideEpisodes = false;
+                    }
+                }
+            }
+        }
+
+        // 2. Top-level errors
+        else if (err.includes("Top-level field")) {
+            const fieldMatch = err.match(/field '([^']+)'/);
+            if (fieldMatch) {
+                const fieldName = fieldMatch[1];
+                for (let i = 0; i < lines.length; i++) {
+                    if (lines[i].includes(`"${fieldName}"`)) {
+                        lineIdx = i;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Apply Marker
+        if (lineIdx !== -1) {
+            const marker = document.createElement("div");
+            marker.style.color = "#da3633";
+            marker.innerHTML = "●"; // Red dot
+            marker.title = err;
+            cmEditor.setGutterMarker(lineIdx, "error-gutter", marker);
+
+            // Also line highlighting (background) if desired, but gutter is requested "roter senkrechter strich"
+            // Let's stick to gutter marker as requested. 
+            // Actually user asked for "roten senkrechten strich". 
+            // "border-left" on line class.
+            cmEditor.addLineClass(lineIdx, "gutter", "error-gutter-line"); // We can style this class in CSS? 
+            // Actually setGutterMarker replaces the content. 
+            // Let's just use the red dot for now, or a styled div.
+            const bar = document.createElement("div");
+            bar.style.height = "100%";
+            bar.style.width = "4px";
+            bar.style.backgroundColor = "#da3633";
+            cmEditor.setGutterMarker(lineIdx, "error-gutter", bar);
+        }
+    });
+}
+
+window.closeCorrectionModal = function () {
+    document.getElementById('correction-modal').classList.add('hidden');
+    currentCorrectionFile = null;
+    if (cmEditor) {
+        cmEditor.clearGutter("error-gutter"); // Clear markers when closing
+    }
+    window.currentValidationErrors = null; // Clear stored errors
+}
+
+window.saveCurrentFile = function () {
+    if (!currentCorrectionFile) return;
+
+    const content = cmEditor.getValue(); // Use CodeMirror content
+    const errorDiv = document.getElementById('correction-errors');
+    errorDiv.innerHTML = "Validating...";
+
+    fetch(`${API_URL}/file/${currentCorrectionFile}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: content })
+    })
+        .then(async res => {
+            const result = await res.json();
+
+            if (res.ok && result.status === 'success') {
+                closeCorrectionModal();
+                // Update main status
+                const statusDiv = document.getElementById('upload-status');
+                if (statusDiv) statusDiv.innerHTML = `<span class="text-success">✅ ${result.message}</span>`;
+                alert("File fixed and saved!");
+            } else if (result.status === 'validation_error') {
+                let errorHtml = '<span>Validation Failed:</span><ul>';
+                result.errors.forEach(err => errorHtml += `<li>${err}</li>`);
+                errorHtml += '</ul>';
+                errorDiv.innerHTML = errorHtml;
+
+                // Store and highlight new errors
+                window.currentValidationErrors = result.errors;
+                highlightErrors(result.errors);
+
+            } else {
+                errorDiv.innerHTML = `Error: ${result.message}`;
+            }
+        })
+        .catch(e => {
+            errorDiv.innerHTML = `System Error: ${e.message}`;
+        });
+}
+
+window.deleteCurrentFile = function () {
+    if (!currentCorrectionFile) return;
+    if (!confirm("Are you sure you want to delete this file?")) return;
+
+    fetch(`${API_URL}/file/${currentCorrectionFile}`, {
+        method: 'DELETE'
+    })
+        .then(async res => {
+            const result = await res.json();
+            if (res.ok) {
+                closeCorrectionModal();
+                const statusDiv = document.getElementById('upload-status');
+                if (statusDiv) statusDiv.innerHTML = `<span class="text-dim">File deleted. Ready for new upload.</span>`;
+            } else {
+                alert("Error deleting file: " + result.message);
+            }
+        })
+        .catch(e => {
+            alert("Error: " + e.message);
+        });
+}
+
+// --- Process Logic ---
+// --- Process Logic (Custom Modal) ---
+let fileToProcess = null;
+
+window.processFile = function (filename) {
+    fileToProcess = filename;
+    document.getElementById('confirm-msg').innerText = `Start processing for ${filename}?`;
+    document.getElementById('confirm-modal').style.display = 'flex';
+}
+
+window.closeConfirmModal = function () {
+    document.getElementById('confirm-modal').style.display = 'none';
+    fileToProcess = null;
+}
+
+document.getElementById('confirm-btn-yes').onclick = async function () {
+    if (!fileToProcess) return;
+
+    const filename = fileToProcess;
+    closeConfirmModal(); // Close first
+
+    const statusDiv = document.getElementById('upload-status');
+    statusDiv.innerHTML = `<span class="text-info">Processing...</span>`;
+
+    try {
+        const res = await fetch(`${API_URL}/process/${filename}`, { method: 'POST' });
+        const result = await res.json();
+
+        if (res.ok) {
+            statusDiv.innerHTML = `<span class="text-success">✅ ${result.message}</span>`;
+        } else {
+            statusDiv.innerHTML = `<span class="text-error">Process Failed: ${result.detail || result.message}</span>`;
+        }
+    } catch (e) {
+        statusDiv.innerHTML = `<span class="text-error">Network Error: ${e.message}</span>`;
+    }
+}
+
 // --- Init ---
+
 
 function init() {
     // Start on Dashboard
     fetchStatus();
     fetchDataFreshness();
     fetchSchedule();
+
+    // Init Modules
+    initUploadLogic();
 
     // Auto refresh loop
     setInterval(() => {

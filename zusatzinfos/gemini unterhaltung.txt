@@ -1,0 +1,94 @@
+1. SQL-Schema (DDL) für Tabelle 1
+Dieses Schema bildet die Grundlage für Ihre Episoden-Datenbank. Es enthält sowohl die ursprünglichen Zeitstempel als auch die Felder für die spätere KI-gestützte Verfeinerung.
+
+SQL
+
+CREATE TABLE crypto_market_events (
+    -- 1. Identifikation & Metadaten
+    event_id TEXT PRIMARY KEY,           -- Normiert durch Python (z. B. sol_2025_04h1_e1)
+    asset TEXT NOT NULL,                -- 'BTC', 'ETH' oder 'SOL' [cite: 58-61]
+    data_origin TEXT,                   -- Herkunftmarkierung (z. B. 'python_pre_processor') 
+    strategy_source TEXT,               -- Quelle (z. B. 'specialist_refined') 
+    
+    -- 2. Zeitliche Dimensionen
+    period_start DATE NOT NULL,         -- 
+    period_end DATE NOT NULL,           -- 
+    time_start TIMESTAMPTZ NOT NULL,    -- Originaler Start (aus JSON) 
+    time_end TIMESTAMPTZ NOT NULL,      -- Originales Ende (aus JSON) 
+    time_start_precise TIMESTAMPTZ,     -- Platzhalter für KI-Verfeinerung
+    time_end_precise TIMESTAMPTZ,       -- Platzhalter für KI-Verfeinerung
+    duration NUMERIC,                   -- Berechnete Dauer in Stunden (durch Python)
+    
+    -- 3. Marktkontext & Qualitative Analyse
+    market_regime TEXT,                 -- 
+    market_phase TEXT,                  -- 
+    volatility_context TEXT,            -- 
+    leverage_level TEXT,                -- 
+    liquidity_condition TEXT,           -- 
+    sentiment_state TEXT,               -- 
+    
+    -- 4. Event-Spezifikationen
+    event_name TEXT,                    -- 
+    event_category TEXT,                -- 
+    event_subcategory TEXT,             -- 
+    surprise_factor INTEGER,            -- 
+    invalidation BOOLEAN,               -- 
+    primary_mechanism TEXT,             -- 
+    mechanism_detail TEXT,              -- 
+    mechanism_strength INTEGER,         -- [cite: 302]
+    
+    -- 5. Indikatoren & Strategie-Parameter
+    cross_asset_corr TEXT,              -- [cite: 303]
+    signal_type_overall TEXT,           -- [cite: 303]
+    leading_indicators TEXT,            -- [cite: 303]
+    pro_strategy TEXT,                  -- [cite: 304]
+    strategy_outcome_rating INTEGER,    -- [cite: 305]
+    strategy_timing TEXT,               -- [cite: 306]
+    risk_profile TEXT,                  -- [cite: 307]
+    impact_strength INTEGER,            -- [cite: 308]
+    confidence_score INTEGER,           -- [cite: 309]
+    similar_pattern_refs TEXT,          -- [cite: 310]
+    
+    -- 6. System-Zeitstempel
+    created_at TIMESTAMPTZ DEFAULT NOW(), -- [cite: 94, 115]
+    updated_at TIMESTAMPTZ DEFAULT NOW()  -- [cite: 95, 116]
+);
+2. Anforderungen an die Befüllung (Python-Logik)
+Das Python-Skript führt den Datenimport mit folgenden spezifischen Regeln durch:
+
+A. Vollständiger Daten-Abgleich (Upsert-Logik)
+Um Konsistenz bei Re-Importen zu gewährleisten, wird eine INSERT ... ON CONFLICT (event_id) DO UPDATE-Abfrage genutzt.
+
+
+Verhalten bei Konflikt: Sollte ein Zeitraum oder eine event_id neu eingespielt werden, werden alle Felder mit den neuen Werten aus der JSON-Datei überschrieben .
+
+Aktualisierung der Precise-Felder: Wenn eine Episode neu eingespielt wird, werden auch die Felder time_start_precise und time_end_precise aktualisiert (bzw. auf den Stand der neuen Datei gesetzt), um sicherzustellen, dass die Datenbasis immer dem aktuellsten Import entspricht.
+
+B. Typisierung und Validierung
+Das Skript stellt sicher, dass die JSON-Daten korrekt für PostgreSQL konvertiert werden:
+
+
+Zeitstempel: Alle Datums- und Zeitangaben werden als TIMESTAMPTZ (mit Zeitzone) übergeben.
+
+
+Ganzzahlen: Qualitative Scores (wie surprise_factor, mechanism_strength, impact_strength etc.) werden als INTEGER validiert und gespeichert .
+
+
+
+Booleans: Das Feld invalidation wird explizit als Wahrheitswert (TRUE/FALSE) übertragen.
+
+Numerik: Die bereits berechnete duration wird als NUMERIC gespeichert, um Dezimalstunden (z. B. 72.5) zu unterstützen.
+
+C. Metadaten-Zuweisung
+Bei jedem Import setzt das Skript automatisch:
+
+
+data_origin = 'python_pre_processor' 
+
+
+strategy_source = 'specialist_refined' 
+
+
+updated_at = NOW() 
+
+Mit dieser Anforderung ist Tabelle 1 bereit für den produktiven Einsatz. Sie dient als stabiles Fundament, das bei jedem Re-Import aktualisiert wird und dennoch die notwendigen Felder für die spätere KI-Präzisierung vorhält.

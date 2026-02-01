@@ -6,3 +6,4 @@ python-dotenv
 apscheduler
 sqlalchemy
 pydantic
+python-multipart

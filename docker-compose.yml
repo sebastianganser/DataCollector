@@ -8,9 +8,17 @@ services:
       - "8888:8888"
     env_file:
       - .env
+    environment:
+      - STORAGE_PATH_INPUT=/app/data/input
+      - STORAGE_PATH_OUTPUT=/app/data/output
+      - STORAGE_PATH_ARCHIVE=/app/data/archiv
     volumes:
-      # Persist logs if needed (optional)
       - ./logs:/app/logs
+      # Persist application data (uploads, archives)
+      - ./data:/app/data
+      - ${DATA_INPUT_DIR:-./data/input}:/app/data/input
+      - ${DATA_OUTPUT_DIR:-./data/output}:/app/data/output
+      - ${DATA_ARCHIVE_DIR:-./data/archiv}:/app/data/archiv
     # If using host IP for DB, standard bridge is fine.
     # If needing to communicate with other containers by name, join their network here.
     network_mode: "bridge"

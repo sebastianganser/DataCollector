@@ -3,7 +3,10 @@ import logging
 import psycopg2
 import subprocess
 import sys
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
+from fastapi.responses import JSONResponse
+import shutil
+import json
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -90,15 +93,26 @@ async def lifespan(app: FastAPI):
     }
     
     scheduler = BackgroundScheduler(jobstores=jobstores, executors=executors)
-    scheduler.start()
-    logger.info("Scheduler started.")
+    
+    if os.getenv("DISABLE_SCHEDULER", "False").lower() in ("true", "1", "yes"):
+        logger.info("Scheduler disabled via environment variable.")
+    else:
+        scheduler.start()
+        logger.info("Scheduler started.")
+    
+    # Ensure tables exist
+    create_tables() 
+    
     
     yield
     
     # Shutdown
-    if scheduler:
-        scheduler.shutdown()
-        logger.info("Scheduler shut down.")
+    if scheduler and scheduler.running:
+        try:
+             scheduler.shutdown()
+             logger.info("Scheduler shut down.")
+        except Exception as e:
+             logger.warning(f"Scheduler shutdown error: {e}")
 
 app = FastAPI(title="Bitget Collector Dashboard", lifespan=lifespan)
 
@@ -461,6 +475,443 @@ def update_setting(req: SettingsUpdate):
     except Exception as e:
         logger.error(f"Settings Update Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# --- File Upload & Processing ---
+
+# Configurable Paths with defaults for local dev
+STORAGE_PATH_INPUT = os.getenv("STORAGE_PATH_INPUT", "./data/input")
+STORAGE_PATH_OUTPUT = os.getenv("STORAGE_PATH_OUTPUT", "./data/output")
+STORAGE_PATH_ARCHIVE = os.getenv("STORAGE_PATH_ARCHIVE", "./data/archiv")
+STORAGE_PATH_FEEDBACK = os.getenv("STORAGE_PATH_FEEDBACK", "./data/feedback")
+
+# Ensure directories exist
+for path in [STORAGE_PATH_INPUT, STORAGE_PATH_OUTPUT, STORAGE_PATH_ARCHIVE, STORAGE_PATH_FEEDBACK]:
+    if not os.path.exists(path):
+        try:
+            os.makedirs(path)
+            logger.info(f"Created directory: {path}")
+        except Exception as e:
+            logger.error(f"Failed to create directory {path}: {e}")
+
+UPLOAD_FOLDER = STORAGE_PATH_INPUT
+
+# --- Validation & Schema ---
+
+SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Vorgabefile", "standard_structure.json")
+SCHEMA_REF = None
+
+def load_schema():
+    global SCHEMA_REF
+    if os.path.exists(SCHEMA_PATH):
+        try:
+             with open(SCHEMA_PATH, 'r') as f:
+                SCHEMA_REF = json.load(f)
+                logger.info("Validation schema loaded.")
+        except Exception as e:
+            logger.error(f"Failed to load schema: {e}")
+
+load_schema()
+
+def validate_rec(data, schema_dict, path=""):
+    errors = []
+    
+    # Iterate over expected fields in schema
+    for key, expected_type_str in schema_dict.items():
+        if key not in data:
+            errors.append(f"Missing field: {path}{key}")
+            continue
+            
+        value = data[key]
+        
+        # Type Validation
+        if expected_type_str == "string":
+            if not isinstance(value, str):
+                errors.append(f"Field '{path}{key}' must be string, got {type(value).__name__}")
+        elif expected_type_str == "integer":
+             if not isinstance(value, int) and not (isinstance(value, str) and value.isdigit()):
+                errors.append(f"Field '{path}{key}' must be integer")
+        elif expected_type_str == "boolean":
+             if not isinstance(value, bool):
+                 errors.append(f"Field '{path}{key}' must be boolean")
+        # Add more types from standard_structure.json if needed
+        # 'datetime' is usually a string in JSON, check format if strict
+        elif expected_type_str == "datetime":
+             pass # TODO: Strict ISO format check?
+             
+    return errors
+
+def validate_json_logic(data: dict) -> list:
+    """
+    Validates data against SCHEMA_REF and enforcing strict non-empty strings.
+    """
+    errors = []
+    if not SCHEMA_REF:
+        return ["Server Error: Schema not loaded"]
+    
+    if not isinstance(data, dict):
+        return ["Root must be a JSON object"]
+
+    # 1. Validate Root fields
+    required_top = ["asset", "period_start", "period_end", "episodes"]
+    for req in required_top:
+        if req not in data:
+            errors.append(f"Missing top-level field: {req}")
+        elif isinstance(data[req], str) and not data[req].strip():
+             errors.append(f"Top-level field '{req}' cannot be empty")
+            
+    if "episodes" in data:
+        if not isinstance(data["episodes"], list):
+            errors.append("'episodes' must be a list")
+        else:
+            # 2. Validate Episodes
+            for i, ep in enumerate(data["episodes"]):
+                if not isinstance(ep, dict):
+                     errors.append(f"Episode {i}: Must be an object")
+                     continue
+
+                # Critical fields that MUST be present and non-empty
+                critical_fields = ["event_id", "created_at", "updated_at", "time_start"]
+                
+                for field in critical_fields:
+                    if field not in ep:
+                        errors.append(f"Episode {i}: Missing field '{field}'")
+                    else:
+                        val = ep[field]
+                        # Check strict string emptiness
+                        if isinstance(val, str):
+                            if not val.strip():
+                                errors.append(f"Episode {i}: Field '{field}' cannot be empty")
+                        elif val is None:
+                             errors.append(f"Episode {i}: Field '{field}' cannot be null")
+
+    return errors
+
+def transform_json_logic(data: dict) -> list:
+    """
+    Flattens structure.
+    """
+    # ... Placeholder for now, postponed
+    return []
+
+def create_tables():
+    """Ensures the market_episodes table exists."""
+    conn = get_db_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS market_episodes (
+                    event_id TEXT PRIMARY KEY,
+                    asset TEXT,
+                    time_start TIMESTAMP,
+                    time_end TIMESTAMP,
+                    duration FLOAT,
+                    created_at TIMESTAMP,
+                    updated_at TIMESTAMP,
+                    raw_data JSONB
+                );
+            """)
+            conn.commit()
+            logger.info("Table 'market_episodes' verified/created.")
+            conn.close()
+        except Exception as e:
+            logger.error(f"Failed to create tables: {e}")
+
+def save_to_db_logic(data: dict):
+    """
+    Saves transformed episodes to the database.
+    Expects data to have 'asset' and 'episodes' list.
+    """
+    conn = get_db_connection()
+    if not conn:
+        logger.error("Skipping DB save: No connection.")
+        return
+
+    try:
+        cur = conn.cursor()
+        asset = data.get("asset", "UNKNOWN")
+        
+        saved_count = 0
+        for ep in data.get("episodes", []):
+            if not isinstance(ep, dict): continue
+            
+            event_id = ep.get("event_id")
+            if not event_id: continue
+            
+            # Extract standard fields
+            time_start = ep.get("time_start")
+            time_end = ep.get("time_end")
+            duration = ep.get("duration")
+            created_at = ep.get("created_at")
+            updated_at = ep.get("updated_at")
+            
+            # Use raw_data for the whole object to preserve everything
+            raw_data = json.dumps(ep)
+            
+            # UPSERT logic
+            sql = """
+                INSERT INTO market_episodes (event_id, asset, time_start, time_end, duration, created_at, updated_at, raw_data)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (event_id) DO UPDATE SET
+                    asset = EXCLUDED.asset,
+                    time_start = EXCLUDED.time_start,
+                    time_end = EXCLUDED.time_end,
+                    duration = EXCLUDED.duration,
+                    created_at = EXCLUDED.created_at,
+                    updated_at = EXCLUDED.updated_at,
+                    raw_data = EXCLUDED.raw_data;
+            """
+            cur.execute(sql, (event_id, asset, time_start, time_end, duration, created_at, updated_at, raw_data))
+            saved_count += 1
+            
+        conn.commit()
+        logger.info(f"Saved {saved_count} episodes to DB.")
+        conn.close()
+    except Exception as e:
+        logger.error(f"DB Save failed: {e}")
+
+class FileUpdate(BaseModel):
+    content: str # JSON string
+
+# --- File Management API ---
+
+@app.get("/api/file/{filename}")
+async def get_file(filename: str):
+    safe_name = os.path.basename(filename)
+    file_path = os.path.join(STORAGE_PATH_INPUT, safe_name)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return {"filename": safe_name, "content": content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/file/{filename}")
+async def update_file(filename: str, update: FileUpdate):
+    safe_name = os.path.basename(filename)
+    file_path = os.path.join(STORAGE_PATH_INPUT, safe_name)
+    
+    # 1. Validate content is valid JSON first
+    try:
+        json_data = json.loads(update.content)
+    except json.JSONDecodeError:
+         raise HTTPException(status_code=400, detail="Invalid JSON format")
+         
+    # 2. Schema Validation
+    validation_errors = validate_json_logic(json_data)
+    if validation_errors:
+        # Save anyway? User said "Editor... correction". verification logic happens on save.
+        # If we return error here, frontend stays in editor.
+        return JSONResponse(status_code=400, content={"status": "validation_error", "errors": validation_errors, "saved": False})
+
+    # 3. Save if valid
+    try:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(update.content)
+    except Exception as e:
+         raise HTTPException(status_code=500, detail=f"Save failed: {e}")
+
+    return {"status": "success", "message": "File updated and verified successfully"}
+
+@app.delete("/api/file/{filename}")
+async def delete_file(filename: str):
+    safe_name = os.path.basename(filename)
+    file_path = os.path.join(STORAGE_PATH_INPUT, safe_name)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+        return {"status": "success", "message": "File deleted"}
+    return {"status": "ignored", "message": "File not found"}
+
+@app.get("/api/output/stats")
+def get_output_stats():
+    if not os.path.exists(STORAGE_PATH_OUTPUT):
+        return {"count": 0}
+    try:
+        files = [name for name in os.listdir(STORAGE_PATH_OUTPUT) if os.path.isfile(os.path.join(STORAGE_PATH_OUTPUT, name))]
+        return {"count": len(files)}
+    except Exception as e:
+        logger.error(f"Error counting output files: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/process/{filename}")
+async def process_file(filename: str):
+    safe_name = os.path.basename(filename)
+    input_path = os.path.join(STORAGE_PATH_INPUT, safe_name)
+    output_path = os.path.join(STORAGE_PATH_OUTPUT, safe_name)
+    
+    if not os.path.exists(input_path):
+        raise HTTPException(status_code=404, detail="File not found in input buffer")
+        
+    try:
+        # 1. Read Input
+        with open(input_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            
+        # 2. Transformation: Calculate Duration
+        if "episodes" in data and isinstance(data["episodes"], list):
+            for i, ep in enumerate(data["episodes"]):
+                if isinstance(ep, dict):
+                    # Parse times
+                    try:
+                        # Assumes ISO format like "2025-01-01T00:00:00Z" or "2025-01-01 00:00:00"
+                        # We use dateutil if available or rudimentary substitution if strictly ISO
+                        # Let's try simple replacement of T/Z for standard datetime.fromisoformat support in Py3.7+
+                        t_start_str = ep.get("time_start", "").replace("Z", "+00:00")
+                        t_end_str = ep.get("time_end", "").replace("Z", "+00:00")
+                        
+                        if t_start_str and t_end_str:
+                            t_start = datetime.fromisoformat(t_start_str)
+                            t_end = datetime.fromisoformat(t_end_str)
+                            
+                            # Diff in hours
+                            diff = t_end - t_start
+                            duration_hours = diff.total_seconds() / 3600.0
+                            val_duration = round(duration_hours, 2)
+                            
+                            # Rebuild dict to preserve order (replace duration_category with duration at same pos)
+                            new_ep = {}
+                            processed_duration = False
+                            
+                            for k, v in ep.items():
+                                if k == "duration_category":
+                                    new_ep["duration"] = val_duration
+                                    processed_duration = True
+                                else:
+                                    # Fallback: if duration already existed (unlikely), update it? 
+                                    # Logic: If we happen to have "duration" key already, just overwrite or keep?
+                                    # Simplest: Just copy.
+                                    new_ep[k] = v
+                            
+                            # If duration_category wasn't found but we calculated duration, append it
+                            if not processed_duration:
+                                new_ep["duration"] = val_duration # fallback if not replaced
+                                
+                            # Replace the episode object in the list
+                            data["episodes"][i] = new_ep
+                    except Exception as trans_err:
+                        logger.warning(f"Transformation warning in episode {i}: {trans_err}")
+                        # Continue processing other episodes? Or fail hard? 
+                        # User requested this transform, so maybe better to proceed but log.
+
+            # 3. New Transformation: Event ID based on Filename
+            # Logic: Remove first word (prefix) before first underscore, then append iterator
+            try:
+                base_name = os.path.splitext(safe_name)[0] # remove extension
+                if "_" in base_name:
+                    parts = base_name.split("_")
+                    # Remove the first part (prefix like 'base' or 'refined')
+                    if len(parts) > 1:
+                        new_base = "_".join(parts[1:])
+                    else:
+                        new_base = base_name # Fallback if no underscore
+                else:
+                    new_base = base_name
+
+                for i, ep in enumerate(data["episodes"]):
+                    if isinstance(ep, dict):
+                        # Construct new event_id: new_base + "_" + iterator (1-based)
+                        ep["event_id"] = f"{new_base}_{i+1}"
+                        
+            except Exception as e:
+                 logger.warning(f"Error transforming event IDs: {e}")
+
+        # 4. File Routing (Archive Only / Revised)
+        # Logic: ALL files -> Archive. Output -> Disabled.
+        
+        lower_name = safe_name.lower()
+        is_refined = lower_name.startswith("refined_")
+        
+        
+        archive_path = os.path.join(STORAGE_PATH_ARCHIVE, safe_name)
+        
+        # Save to Archive (ALL files)
+        with open(archive_path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4)
+        logger.info(f"Saved to Archive: {safe_name}")
+
+        # 4b. Split to Markdown (Refined files ONLY)
+        if is_refined and "episodes" in data:
+            try:
+                for ep in data["episodes"]:
+                    if not isinstance(ep, dict): continue
+                    
+                    ev_id = ep.get("event_id")
+                    if not ev_id: continue
+                    
+                    # Create content
+                    md_filename = f"{ev_id}.md"
+                    md_path = os.path.join(STORAGE_PATH_OUTPUT, md_filename)
+                    
+                    md_content = "```json\n" + json.dumps(ep, indent=4) + "\n```"
+                    
+                    with open(md_path, 'w', encoding='utf-8') as f:
+                        f.write(md_content)
+                        
+                logger.info(f"Split {len(data['episodes'])} episodes to Output for: {safe_name}")
+            except Exception as e:
+                logger.error(f"Failed to split episodes to MD: {e}")
+
+        # Output saving of FULL JSON disabled per user request (Archive only for full file)
+        # if not is_base: ...
+            
+        # 5. Save to Database
+        # try:
+        #    save_to_db_logic(data) # DISABLED per user request
+        # except Exception as e:
+        #    logger.error(f"Failed to save to DB: {e}")
+
+        # 6. Remove Input
+        os.remove(input_path)
+        
+        logger.info(f"Processed file: {safe_name} -> {output_path}")
+        return {"status": "success", "message": f"Processed successfully: {safe_name} -> Output"}
+    except Exception as e:
+        logger.error(f"Process failed for {safe_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
+
+
+@app.post("/api/upload")
+async def upload_file(file: UploadFile = File(...)):
+    try:
+        # 1. Save File
+        file_location = os.path.join(UPLOAD_FOLDER, file.filename)
+        with open(file_location, "wb+") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+            
+        logger.info(f"File saved to {file_location}")
+        
+        # 2. Parse JSON
+        with open(file_location, 'r') as f:
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError:
+                return JSONResponse(status_code=400, content={"status": "error", "message": "Invalid JSON format", "filename": file.filename})
+        
+        # 3. Validate
+        validation_errors = validate_json_logic(data)
+        if validation_errors:
+             return JSONResponse(status_code=400, content={"status": "validation_error", "errors": validation_errors, "filename": file.filename})
+
+        # 4. Transform (Postponed)
+        # try:
+        #     transformed_data = transform_json_logic(data)
+        # except Exception as e:
+        #      return JSONResponse(status_code=500, content={"status": "error", "message": f"Transformation failed: {str(e)}"})
+
+        # 5. Insert to DB
+        try:
+            save_to_db_logic(transformed_data)
+        except Exception as e:
+            return JSONResponse(status_code=500, content={"status": "error", "message": f"Database insertion failed: {str(e)}"})
+            
+        return {"status": "success", "message": "File Validated Successfully (DB Writing is disabled)", "filename": file.filename}
+        
+    except Exception as e:
+        logger.error(f"Upload Error: {e}")
+        return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
 
 @app.get("/api/gaps")
 def check_gaps():
