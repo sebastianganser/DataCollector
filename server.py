@@ -903,7 +903,7 @@ async def upload_file(file: UploadFile = File(...)):
 
         # 5. Insert to DB
         try:
-            save_to_db_logic(transformed_data)
+            save_to_db_logic(data)
         except Exception as e:
             return JSONResponse(status_code=500, content={"status": "error", "message": f"Database insertion failed: {str(e)}"})
             
