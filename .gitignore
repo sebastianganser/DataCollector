@@ -13,6 +13,7 @@ logs/
 # Data dumps
 data_dump/
 *.json
+!Vorgabefile/*.json
 
 # VS Code
 .vscode/

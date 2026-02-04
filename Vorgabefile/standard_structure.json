@@ -1,0 +1,41 @@
+{
+  "root_structure": {
+    "asset": "string",
+    "period_start": "date",
+    "period_end": "date",
+    "episodes": "list"
+  },
+  "episode_structure": {
+    "event_id": "string",
+    "asset": "string",
+    "time_start": "datetime",
+    "time_end": "datetime",
+    "duration_category": "string",
+    "market_regime": "string",
+    "market_phase": "string",
+    "volatility_context": "string",
+    "leverage_level": "string",
+    "liquidity_condition": "string",
+    "sentiment_state": "string",
+    "event_name": "string",
+    "event_category": "string",
+    "event_subcategory": "string",
+    "surprise_factor": "integer",
+    "invalidation": "boolean",
+    "primary_mechanism": "string",
+    "mechanism_detail": "string",
+    "mechanism_strength": "integer",
+    "cross_asset_corr": "string",
+    "signal_type_overall": "string",
+    "leading_indicators": "string",
+    "pro_strategy": "string",
+    "strategy_outcome_rating": "integer",
+    "strategy_timing": "string",
+    "risk_profile": "string",
+    "impact_strength": "integer",
+    "confidence_score": "integer",
+    "similar_pattern_refs": "string",
+    "created_at": "datetime",
+    "updated_at": "datetime"
+  }
+}
