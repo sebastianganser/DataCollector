@@ -223,6 +223,19 @@
                     </div>
                 </div>
 
+                <!-- n8n Sync Workflow Control -->
+                <div class="card" style="margin-top: 1rem;">
+                    <div class="card-header">
+                        <h2>n8n Sync Workflow</h2>
+                    </div>
+                    <div class="card-body" style="display:flex; align-items:center; gap:1rem; padding: 1.5rem;">
+                        <button id="btn-sync-toggle" class="btn btn-secondary" onclick="toggleSync()" style="min-width: 150px;">Start Sync</button>
+                        <div id="sync-status-indicator" class="status-badge" style="background:var(--card-bg); border: 1px solid var(--border); color: var(--text-dim);">Stopped</div>
+                        <div style="flex:1;"></div>
+                        <div class="text-dim small">Monitor: data/output & feedback</div>
+                    </div>
+                </div>
+
                 <!-- Correction Area (Embedded) -->
                 <div id="correction-modal" class="card hidden" style="border-color: var(--accent);">
                     <div class="card-header" style="display:flex; justify-content:space-between;">

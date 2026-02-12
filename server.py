@@ -608,7 +608,14 @@ def create_tables():
                     duration FLOAT,
                     created_at TIMESTAMP,
                     updated_at TIMESTAMP,
-                    raw_data JSONB
+                    raw_data JSONB,
+                    event_name TEXT,
+                    event_category TEXT,
+                    market_regime TEXT,
+                    signal_type_overall TEXT,
+                    confidence_score INTEGER,
+                    impact_strength INTEGER,
+                    similar_pattern_refs TEXT
                 );
             """)
             conn.commit()
@@ -669,6 +676,50 @@ def save_to_db_logic(data: dict):
         conn.close()
     except Exception as e:
         logger.error(f"DB Save failed: {e}")
+
+# --- Sync Workflow Control ---
+
+sync_process = None
+
+@app.post("/api/sync/start")
+def start_sync():
+    global sync_process
+    if sync_process and sync_process.poll() is None:
+        return {"status": "already_running", "pid": sync_process.pid}
+    
+    try:
+        # Use sys.executable to ensure we use the same python interpreter
+        script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sync_workflow.py")
+        # Run as a separate process
+        # creationflags=subprocess.CREATE_NEW_CONSOLE specifically for Windows if we wanted a separate window, 
+        # but for background we stick to default or DETACHED. 
+        # For now, standard Popen.
+        sync_process = subprocess.Popen([sys.executable, script_path])
+        return {"status": "started", "pid": sync_process.pid}
+    except Exception as e:
+        logger.error(f"Failed to start sync: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/sync/stop")
+def stop_sync():
+    global sync_process
+    if sync_process and sync_process.poll() is None:
+        try:
+            sync_process.terminate()
+            # Windows optional: sync_process.kill() if terminate doesn't work well with python scripts
+            sync_process.wait(timeout=5)
+            sync_process = None
+            return {"status": "stopped"}
+        except Exception as e:
+            logger.error(f"Failed to stop sync: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "not_running"}
+
+@app.get("/api/sync/status")
+def get_sync_status():
+    global sync_process
+    is_running = sync_process is not None and sync_process.poll() is None
+    return {"running": is_running, "pid": sync_process.pid if is_running else None}
 
 class FileUpdate(BaseModel):
     content: str # JSON string

@@ -1038,6 +1038,60 @@ document.getElementById('confirm-btn-yes').onclick = async function () {
     }
 }
 
+// --- n8n Sync Workflow ---
+
+async function toggleSync() {
+    const btn = document.getElementById('btn-sync-toggle');
+    // Check current state from button class
+    const isRunning = btn.classList.contains('btn-danger'); // Red means running/stop
+
+    try {
+        let endpoint = isRunning ? '/api/sync/stop' : '/api/sync/start';
+        const response = await fetch(endpoint, { method: 'POST' });
+        const result = await response.json();
+
+        if (result.status === 'started' || result.status === 'already_running') {
+            updateSyncUI(true);
+        } else if (result.status === 'stopped' || result.status === 'not_running') {
+            updateSyncUI(false);
+        }
+
+    } catch (error) {
+        console.error("Sync Toggle Error:", error);
+    }
+}
+
+function updateSyncUI(isRunning) {
+    const btn = document.getElementById('btn-sync-toggle');
+    const statusDiv = document.getElementById('sync-status-indicator');
+
+    if (!btn || !statusDiv) return;
+
+    if (isRunning) {
+        btn.textContent = "Stop Sync";
+        btn.className = "btn btn-danger"; // Red for stop
+        statusDiv.textContent = "Running";
+        statusDiv.style.borderColor = "var(--success)";
+        statusDiv.style.color = "var(--success)";
+    } else {
+        btn.textContent = "Start Sync";
+        btn.className = "btn btn-secondary"; // Default
+        statusDiv.textContent = "Stopped";
+        statusDiv.style.borderColor = "var(--border)";
+        statusDiv.style.color = "var(--text-dim)";
+    }
+}
+
+async function checkSyncStatus() {
+    try {
+        const response = await fetch(`${API_URL}/sync/status?_t=${Date.now()}`);
+        const data = await response.json();
+        updateSyncUI(data.running);
+    } catch (e) {
+        console.warn("Sync status check failed", e);
+    }
+}
+
 // --- Init ---
 
 
@@ -1046,6 +1100,7 @@ function init() {
     fetchStatus();
     fetchDataFreshness();
     fetchSchedule();
+    checkSyncStatus();
 
     // Init Modules
     initUploadLogic();
@@ -1057,6 +1112,7 @@ function init() {
             fetchDataFreshness();
             fetchSchedule();
         }
+        checkSyncStatus();
     }, 5000);
 }
 
