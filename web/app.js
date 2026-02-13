@@ -543,6 +543,7 @@ async function cleanupData(target) {
         "funding": "Funding Rates",
         "oi": "Open Interest",
         "logs": "System Logs",
+        "episodes": "Market Episodes (Sync Data)",
         "all": "ALL DATA (Everything)"
     };
 

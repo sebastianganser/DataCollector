@@ -229,8 +229,11 @@
                         <h2>n8n Sync Workflow</h2>
                     </div>
                     <div class="card-body" style="display:flex; align-items:center; gap:1rem; padding: 1.5rem;">
-                        <button id="btn-sync-toggle" class="btn btn-secondary" onclick="toggleSync()" style="min-width: 150px;">Start Sync</button>
-                        <div id="sync-status-indicator" class="status-badge" style="background:var(--card-bg); border: 1px solid var(--border); color: var(--text-dim);">Stopped</div>
+                        <button id="btn-sync-toggle" class="btn btn-secondary" onclick="toggleSync()"
+                            style="min-width: 150px;">Start Sync</button>
+                        <div id="sync-status-indicator" class="status-badge"
+                            style="background:var(--card-bg); border: 1px solid var(--border); color: var(--text-dim);">
+                            Stopped</div>
                         <div style="flex:1;"></div>
                         <div class="text-dim small">Monitor: data/output & feedback</div>
                     </div>
@@ -322,6 +325,14 @@
                         <div class="text-dim small">Historical OI data</div>
                     </div>
                     <button class="btn-danger small" onclick="cleanupData('oi')">Clear</button>
+                </div>
+
+                <div class="setting-item">
+                    <div class="setting-info">
+                        <strong>Market Episodes</strong>
+                        <div class="text-dim small">Sync results & feedback</div>
+                    </div>
+                    <button class="btn-danger small" onclick="cleanupData('episodes')">Clear</button>
                 </div>
 
                 <div class="setting-item">

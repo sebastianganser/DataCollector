@@ -328,7 +328,8 @@ def cleanup_data(target: str):
         "ohlcv": "ohlcv_1h",
         "funding": "funding_1h",
         "oi": "oi_1h",
-        "logs": "collector_logs"
+        "logs": "collector_logs",
+        "episodes": "market_episodes"
     }
     
     try:
