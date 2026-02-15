@@ -590,7 +590,7 @@ def process_oi(storage, client, symbol):
                      last_dt = last_dt.replace(tzinfo=timezone.utc)
                      
                  time_diff = current_dt - last_dt
-                 hours_diff = int(time_diff.total_seconds() / 3600)
+                 hours_diff = round(time_diff.total_seconds() / 3600)
                  
                  # Only interpolate if gap is significant (> 1.1 hours to avoid slight drifts)
                  if hours_diff > 1:
