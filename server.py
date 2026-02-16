@@ -479,6 +479,70 @@ def update_setting(req: SettingsUpdate):
 
 # --- File Upload & Processing ---
 
+# --- Helper Functions for Data Fetching ---
+
+def fetch_episode_data(asset, t_start, t_end):
+    """
+    Fetches OHLCV, OI, and Funding data for the given time range.
+    t_start, t_end: datetime objects (timezone aware or naive, DB compares usually fine if consistent)
+    """
+    conn = get_db_connection()
+    if not conn: return {}
+    
+    data = {}
+    try:
+        cur = conn.cursor()
+        
+        # Buffer time range slightly (e.g. Include the exact hour or +/- small buffer?)
+        # Let's use exact range inclusive.
+        
+        # OHLCV
+        cur.execute("SELECT ts, open, high, low, close, volume FROM ohlcv_1h WHERE asset = %s AND ts >= %s AND ts <= %s ORDER BY ts ASC", (asset, t_start, t_end))
+        rows = cur.fetchall()
+        data["ohlcv"] = []
+        for r in rows:
+            # Format: Date, O, H, L, C, V
+            ts_str = r[0].strftime("%Y-%m-%d %H:%M") if r[0] else "-"
+            data["ohlcv"].append([ts_str, f"{float(r[1]):.2f}", f"{float(r[2]):.2f}", f"{float(r[3]):.2f}", f"{float(r[4]):.2f}", f"{float(r[5]):.2f}"])
+            
+        # Open Interest
+        cur.execute("SELECT ts, open_interest FROM oi_1h WHERE asset = %s AND ts >= %s AND ts <= %s ORDER BY ts ASC", (asset, t_start, t_end))
+        rows = cur.fetchall()
+        data["oi"] = []
+        for r in rows:
+            ts_str = r[0].strftime("%Y-%m-%d %H:%M") if r[0] else "-"
+            data["oi"].append([ts_str, f"{float(r[1]):.3f}"])
+
+        # Funding (1h data, labeled 8h in report per user request)
+        cur.execute("SELECT ts, funding_rate FROM funding_1h WHERE asset = %s AND ts >= %s AND ts <= %s ORDER BY ts ASC", (asset, t_start, t_end))
+        rows = cur.fetchall()
+        data["funding"] = []
+        for r in rows:
+            ts_str = r[0].strftime("%Y-%m-%d %H:%M") if r[0] else "-"
+            data["funding"].append([ts_str, f"{float(r[1]):.6f}"])
+            
+        conn.close()
+    except Exception as e:
+        logger.error(f"Error fetching episode data: {e}")
+        if conn: conn.close()
+        
+    return data
+
+def format_data_table(title, headers, rows):
+    if not rows:
+        return f"### {title}\n*No data available for this period.*\n\n"
+        
+    md = f"### {title}\n"
+    # Header
+    md += "| " + " | ".join(headers) + " |\n"
+    # Separator
+    md += "| " + " | ".join(["---"] * len(headers)) + " |\n"
+    # Rows
+    for row in rows:
+        md += "| " + " | ".join(row) + " |\n"
+    md += "\n"
+    return md
+
 # Configurable Paths with defaults for local dev
 STORAGE_PATH_INPUT = os.getenv("STORAGE_PATH_INPUT", "./data/input")
 STORAGE_PATH_OUTPUT = os.getenv("STORAGE_PATH_OUTPUT", "./data/output")
@@ -892,12 +956,67 @@ async def process_file(filename: str):
                     
                     ev_id = ep.get("event_id")
                     if not ev_id: continue
-                    
+
                     # Create content
                     md_filename = f"{ev_id}.md"
                     md_path = os.path.join(STORAGE_PATH_OUTPUT, md_filename)
                     
-                    md_content = "```json\n" + json.dumps(ep, indent=4) + "\n```"
+                    # fetch extra data
+                    asset = ep.get('asset')
+                    
+                    # Parse times again for DB Query
+                    t_start_obj = None
+                    t_end_obj = None
+                    try: 
+                        # We calculated them before but didn't store objects in 'ep' necessarily in a standard way?
+                        # actually we updated them in the transformation block? 
+                        # The transformation block updated duration but didn't standardise the string format in 'ep'
+                        # It just read them.
+                        # So let's re-parse safely
+                        ts_s = ep.get("time_start", "").replace("Z", "+00:00")
+                        te_s = ep.get("time_end", "").replace("Z", "+00:00")
+                        if ts_s: t_start_obj = datetime.fromisoformat(ts_s)
+                        if te_s: t_end_obj = datetime.fromisoformat(te_s)
+                    except: pass
+                    
+                    extra_data_md = ""
+                    if asset and t_start_obj and t_end_obj:
+                         db_data = fetch_episode_data(asset, t_start_obj, t_end_obj)
+                         
+                         extra_data_md += "## Event Related Data\n\n"
+                         extra_data_md += format_data_table("OHLCV (1h)", ["Date", "Open", "High", "Low", "Close", "Volume"], db_data.get("ohlcv", []))
+                         extra_data_md += format_data_table("Open Interest (1h)", ["Date", "OI"], db_data.get("oi", []))
+                         extra_data_md += format_data_table("Funding Rate (8h)", ["Date", "Rate"], db_data.get("funding", []))
+
+                    md_content = f"""# {ep.get('event_name', 'Event')} ({ev_id})
+
+**Asset:** {ep.get('asset', 'Unknown')}
+**Date:** {ep.get('time_start', '-')} - {ep.get('time_end', '-')}
+**Duration:** {ep.get('duration', '-')} hours
+
+## Market Context
+- **Regime:** {ep.get('market_regime', '-')}
+- **Phase:** {ep.get('market_phase', '-')}
+- **Volatility:** {ep.get('volatility_context', '-')}
+- **Sentiment:** {ep.get('sentiment_state', '-')}
+
+## Analysis
+- **Signal:** {ep.get('signal_type_overall', '-')}
+- **Confidence:** {ep.get('confidence_score', '-')}%
+- **Impact:** {ep.get('impact_strength', '-')}/10
+- **Risk Profile:** {ep.get('risk_profile', '-')}
+
+## Strategy
+- **Pro Strategy:** {ep.get('pro_strategy', '-')}
+- **Outcome:** {ep.get('strategy_outcome_rating', '-')}/10
+
+---
+{extra_data_md}
+---
+## Raw Data
+```json
+{json.dumps(ep, indent=4)}
+```"""
                     
                     with open(md_path, 'w', encoding='utf-8') as f:
                         f.write(md_content)
