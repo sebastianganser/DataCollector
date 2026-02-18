@@ -717,13 +717,26 @@ def save_to_db_logic(data: dict):
             created_at = ep.get("created_at")
             updated_at = ep.get("updated_at")
             
+            # Extract additional new fields
+            event_name = ep.get("event_name")
+            event_category = ep.get("event_category")
+            market_regime = ep.get("market_regime")
+            signal_type_overall = ep.get("signal_type_overall")
+            confidence_score = ep.get("confidence_score")
+            impact_strength = ep.get("impact_strength")
+            similar_pattern_refs = ep.get("similar_pattern_refs")
+
             # Use raw_data for the whole object to preserve everything
             raw_data = json.dumps(ep)
             
             # UPSERT logic
             sql = """
-                INSERT INTO market_episodes (event_id, asset, time_start, time_end, duration, created_at, updated_at, raw_data)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO market_episodes (
+                    event_id, asset, time_start, time_end, duration, created_at, updated_at, raw_data,
+                    event_name, event_category, market_regime, signal_type_overall, 
+                    confidence_score, impact_strength, similar_pattern_refs
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (event_id) DO UPDATE SET
                     asset = EXCLUDED.asset,
                     time_start = EXCLUDED.time_start,
@@ -731,9 +744,20 @@ def save_to_db_logic(data: dict):
                     duration = EXCLUDED.duration,
                     created_at = EXCLUDED.created_at,
                     updated_at = EXCLUDED.updated_at,
-                    raw_data = EXCLUDED.raw_data;
+                    raw_data = EXCLUDED.raw_data,
+                    event_name = EXCLUDED.event_name,
+                    event_category = EXCLUDED.event_category,
+                    market_regime = EXCLUDED.market_regime,
+                    signal_type_overall = EXCLUDED.signal_type_overall,
+                    confidence_score = EXCLUDED.confidence_score,
+                    impact_strength = EXCLUDED.impact_strength,
+                    similar_pattern_refs = EXCLUDED.similar_pattern_refs;
             """
-            cur.execute(sql, (event_id, asset, time_start, time_end, duration, created_at, updated_at, raw_data))
+            cur.execute(sql, (
+                event_id, asset, time_start, time_end, duration, created_at, updated_at, raw_data,
+                event_name, event_category, market_regime, signal_type_overall, 
+                confidence_score, impact_strength, similar_pattern_refs
+            ))
             saved_count += 1
             
         conn.commit()
