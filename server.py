@@ -1061,8 +1061,15 @@ async def process_file(filename: str):
         # 6. Remove Input
         os.remove(input_path)
         
+        # 7. Start Sync Workflow
+        # Ensure the background worker is running to pick up the generated files
+        try:
+            start_sync()
+        except:
+            pass # Ignore if already running or minor error, it logs internally
+
         logger.info(f"Processed file: {safe_name} -> {output_path}")
-        return {"status": "success", "message": f"Processed successfully: {safe_name} -> Output"}
+        return {"status": "success", "message": f"Processed successfully: {safe_name} -> Output (Sync Started)"}
     except Exception as e:
         logger.error(f"Process failed for {safe_name}: {e}")
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
@@ -1096,13 +1103,13 @@ async def upload_file(file: UploadFile = File(...)):
         # except Exception as e:
         #      return JSONResponse(status_code=500, content={"status": "error", "message": f"Transformation failed: {str(e)}"})
 
-        # 5. Insert to DB
-        try:
-            save_to_db_logic(data)
-        except Exception as e:
-            return JSONResponse(status_code=500, content={"status": "error", "message": f"Database insertion failed: {str(e)}"})
+        # 5. Insert to DB (DISABLED for Sequential Workflow)
+        # try:
+        #    save_to_db_logic(data)
+        # except Exception as e:
+        #    return JSONResponse(status_code=500, content={"status": "error", "message": f"Database insertion failed: {str(e)}"})
             
-        return {"status": "success", "message": "File Validated Successfully (DB Writing is disabled)", "filename": file.filename}
+        return {"status": "success", "message": "File Uploaded & Validated. Ready for Process.", "filename": file.filename}
         
     except Exception as e:
         logger.error(f"Upload Error: {e}")
