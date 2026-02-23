@@ -213,7 +213,13 @@ def get_latest_data():
         logger.error(f"Error fetching latest data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# --- Scheduler Endpoints ---
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    # Return 204 No Content for favicon to keep the browser console clean
+    from fastapi.responses import Response
+    return Response(status_code=204)
+
+# --- Endpoint Defs ---
 
 @app.get("/api/schedule")
 def get_schedule():

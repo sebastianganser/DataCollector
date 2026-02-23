@@ -112,7 +112,15 @@ def process_file(filepath):
             content = f.read()
 
         # Handle Markdown code blocks if present
-        if content.strip().startswith("```json"):
+        if filepath.endswith('.md'):
+            import re
+            match = re.search(r'```json\s+(.*?)\s+```', content, re.DOTALL)
+            if match:
+                content = match.group(1)
+            else:
+                logger.error(f"No JSON block found in {filepath}")
+                return False
+        elif content.strip().startswith("```json"):
             content = content.replace("```json", "").replace("```", "")
         
         data = json.loads(content)
